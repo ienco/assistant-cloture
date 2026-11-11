@@ -18,3 +18,7 @@ Outil web gratuit pour les comptables du notariat (formation INAFON) : checklist
 - Libellés d'écriture : « <Nature> au JJ/MM/AAAA – <désignation> ».
 - Date de clôture par défaut : 31/12/N-1 jusqu'au 15 janvier N, puis 31/12/N ; modifiable (arrêtés intermédiaires).
 - Impact sur le résultat : classes 6 et 7, crédit − débit.
+
+## État d'avancement
+- En production : checklist, ICNE, FNP, CCA, indicateur d'impact sur le résultat.
+- À développer (modalités à fournir par S. Dabbabi) : véhicules (AEN, TVS, dotation excédentaire, amortissement batterie), contrôle de TVA, contrôle CRPCEN, liquidation CVAE, provision pour congés payés, réductions et crédits d'impôt, liquidation de l'IS.
