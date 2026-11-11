@@ -9,8 +9,8 @@ Outil web gratuit pour les comptables du notariat (formation INAFON) : checklist
 
 ## Déploiement
 - Hébergement : page Webflow `ienco.fr/outils/assistant-cloture` (site Webflow « Ienco », page id `6af4940c5994b355dcdeb0d7`).
-- Le code personnalisé de la page charge `dist/` via jsDelivr sur un **tag** : `https://cdn.jsdelivr.net/gh/ienco/assistant-cloture@vX.Y.Z/dist/app.js` (+ `app.css`).
-- Nouvelle version : build → commit → tag `vX.Y.Z` → push → mettre à jour le numéro de version dans le pied de page Webflow → publier.
+- Le code personnalisé de la page charge `dist/` via jsDelivr, épinglé sur le **SHA complet du commit** (l'envoi de tags est bloqué par le proxy de session) : en-tête = `<link rel=stylesheet href="https://cdn.jsdelivr.net/gh/ienco/assistant-cloture@<SHA>/dist/app.css">`, pied de page = `<div id="ienco-app"></div><script src="https://cdn.jsdelivr.net/gh/ienco/assistant-cloture@<SHA>/dist/app.js"></script>`.
+- Nouvelle version : build → commit → push main → remplacer le SHA dans l'en-tête et le pied de page Webflow → publier.
 - Recette : les modules listés dans `BETA` (src/app.js) ne sont actifs que sur `ienco.webflow.io` ; publier d'abord sur ce domaine. Production (ienco.fr) uniquement après validation explicite de S. Dabbabi.
 
 ## Conventions métier
