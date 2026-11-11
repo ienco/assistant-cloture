@@ -577,7 +577,7 @@ function updateImpact(){
     <p class="hint" style="margin:8px 0 0">Comptes de charges et de produits : un débit diminue le résultat, un crédit l'augmente.</p>`;
 }
 /* Modules en test : actifs uniquement sur le domaine de recette webflow.io */
-const BETA = ["cca"];
+const BETA = [];
 if(!/webflow\.io$|^localhost$|^$/.test(location.hostname)) BETA.forEach(k=>delete MODULES[k]);
 
 function icneRefresh(loanEl){
