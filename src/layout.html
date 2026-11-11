@@ -1,0 +1,84 @@
+<header class="topbar">
+  <button class="btn ghost menu-toggle" id="menuBtn" aria-label="Menu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+  </button>
+  <img data-logo src="" alt="ienco">
+  <div class="t"><b>Assistant de clôture des comptes</b><span>L'autonomie du comptable à la clôture – offices notariaux</span></div>
+  <div class="sp"></div>
+  <button class="btn primary" id="pdfBtn" title="Éditer la page affichée en PDF">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v7H6z"/></svg>
+    <span class="lbl-long">Imprimer en PDF</span><span class="lbl-short" style="display:none">PDF</span>
+  </button>
+</header>
+
+<div class="layout">
+  <aside id="side">
+    <div class="side-h">Paramètres du dossier</div>
+    <div class="params">
+      <div class="field">
+        <label for="p-office">Office / dossier</label>
+        <input id="p-office" type="text" placeholder="ex. SELARL Martin & Associés">
+      </div>
+      <div class="field">
+        <label for="p-regime">Forme et régime fiscal</label>
+        <select id="p-regime">
+          <option value="ei_ir">Office individuel à l'IR</option>
+          <option value="ei_is">Office individuel à l'IS</option>
+          <option value="soc_ir">Société soumise à l'IR</option>
+          <option value="soc_is">Société soumise à l'IS</option>
+        </select>
+      </div>
+      <div class="row2" id="soc-fields">
+        <div class="field">
+          <label for="p-assoc">Nb d'associés</label>
+          <input id="p-assoc" type="number" min="1" step="1" value="2">
+        </div>
+        <div class="field">
+          <label for="p-offices">Nb d'offices</label>
+          <input id="p-offices" type="number" min="1" step="1" value="1">
+        </div>
+      </div>
+      <div class="field">
+        <label for="p-date">Date de clôture</label>
+        <input id="p-date" type="date">
+        <div class="hint" id="date-hint"></div>
+      </div>
+    </div>
+
+    <div class="impact-box" id="impact"></div>
+    <nav id="nav"></nav>
+
+    <div class="storage-note" id="storageNote"></div>
+    <div style="margin-top:10px"><button class="btn ghost" id="resetBtn" style="font-size:12px;padding:6px 10px">Effacer mes données</button></div>
+  </aside>
+
+  <main id="main">
+    <div class="print-only print-head"><img data-logo src="" alt="ienco"><div style="text-align:right;font-size:12px"><b>Assistant de clôture des comptes</b><br><span class="ph-ctx"></span></div></div>
+    <div id="views"></div>
+    <div class="print-only print-foot">
+      Outil d'assistance à la clôture des offices notariaux, mis gratuitement à la disposition des comptables du notariat.<br>
+      ienco expertise – 7 rue de Tahiti, 75012 Paris – s.dabbabi@ienco.fr – 07 57 81 11 09
+    </div>
+  </main>
+</div>
+
+<div id="pdf-stage" aria-hidden="true"></div>
+<div class="toast" id="toast"></div>
+<div class="busy" id="busy">Génération du PDF…</div>
+<div class="modal-bg" id="fb">
+  <div class="modal">
+    <h2>Export PDF indisponible ici</h2>
+    <p>L'enregistrement de fichiers n'est pas autorisé dans cette version en ligne de l'outil. Vos saisies restent conservées sur ce navigateur.</p>
+    <div class="acts"><button class="btn primary" id="fb-close">Fermer</button></div>
+  </div>
+</div>
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <h2 id="m-title">Effacer les données ?</h2>
+    <p id="m-text">Les paramètres, la checklist et toutes les saisies enregistrées sur ce navigateur seront supprimés.</p>
+    <div class="acts">
+      <button class="btn" id="m-cancel">Annuler</button>
+      <button class="btn primary" id="m-ok">Effacer</button>
+    </div>
+  </div>
+</div>
