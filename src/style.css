@@ -220,6 +220,15 @@ h2{font-size:16px;margin:0;font-weight:700}
 #pdf-stage .cc-libre{display:none!important}
 @media (max-width:900px){.ccrow{grid-template-columns:1fr 1fr}.ccrow.fhead{display:none}.ccrow .cc-per{grid-column:1/-1;grid-row:auto}.cc-dates{grid-template-columns:1fr 1fr 1fr}}
 
+/* Provision CP */
+.cp-res{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;width:100%}
+.cp-res div{background:var(--bg);border-radius:8px;padding:6px 10px;border:1px solid transparent}
+.cp-res span{display:block;font-size:11px;color:var(--muted)}.cp-res b{font-variant-numeric:tabular-nums;font-size:13.5px}
+.cp-res div.best{border-color:var(--vert);background:var(--vert-50)}
+.cp-res div.ret{background:var(--violet-50)}.cp-res div.ret b{color:var(--violet)}
+.cp-mode{padding:12px 16px}
+@media (max-width:900px){.sal .loan-grid{grid-template-columns:1fr 1fr!important}.cp-res{grid-template-columns:1fr 1fr}}
+
 /* Compatibilité Webflow (styles globaux du site) */
 html,body{height:auto}
 .task label,.donebox{font-weight:inherit;margin-bottom:0}

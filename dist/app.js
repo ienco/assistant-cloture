@@ -325,7 +325,7 @@ const MODULES = {
         <button class="btn add no-print" data-icne-add>+ Ajouter un emprunt</button>
         <div id="icne-sum">${icneSummaryHTML()}</div>`;
     },
-    after(root){ $$(".loan", root).forEach(el=>{ const L=mod("icne").loans.find(x=>x.id===el.dataset.loan); $("[data-icne-res]",el).innerHTML=icneResHTML(L); }); }
+    after(root){ $$("[data-loan]", root).forEach(el=>{ const L=mod("icne").loans.find(x=>x.id===el.dataset.loan); $("[data-icne-res]",el).innerHTML=icneResHTML(L); }); }
   }
 };
 
@@ -576,8 +576,131 @@ function updateImpact(){
     <table class="tbl"><tbody>${d.rows.map(x=>`<tr class="${x.v?"":"dim"}"><td><a href="#${x.id}" class="no-print-link">${esc(x.label)}</a></td><td class="r">${x.v?sgn(x.v):"—"}</td></tr>`).join("")}</tbody></table>
     <p class="hint" style="margin:8px 0 0">Comptes de charges et de produits : un débit diminue le résultat, un crédit l'augmente.</p>`;
 }
+
+/* =========================================================
+   MODULE : PROVISION POUR CONGÉS PAYÉS
+   ========================================================= */
+const CP_MODES = { ouvrables:{label:"Jours ouvrables (30 j/an)", an:30, mois:26}, ouvres:{label:"Jours ouvrés (25 j/an)", an:25, mois:21.67} };
+const newSal = ()=>({ id:uid(), nom:"", base:"", brut:"", jours:"", charges:"", taux:"" });
+function cpCalc(S){
+  const mode = CP_MODES[state.mods.cp.mode] || CP_MODES.ouvrables;
+  const r = { ok:false, err:null };
+  const base=num(S.base), brut=num(S.brut), j=num(S.jours), ch=num(S.charges), tx=num(S.taux);
+  for(const [k,v,lbl] of [["base",base,"Salaire de base"],["brut","brut","Brut cumulé"],["jours",j,"Jours de CP"],["charges",ch,"Charges cumulées"],["taux",tx,"Taux patronal"]]){
+    const raw = S[k]; const val = num(raw);
+    if(raw!=="" && (val===null || val<0)){ r.err = `${lbl} invalide.`; return r; }
+  }
+  r.tauxAuto = (brut && ch!==null) ? ch/brut*100 : null;
+  r.taux = S.taux!=="" ? tx : r.tauxAuto;
+  if(j===null) return r;
+  if(brut!==null) r.dixieme = r2(brut/10 * j/mode.an);
+  if(base!==null) r.maintien = r2(base/mode.mois * j);
+  if(r.dixieme===undefined && r.maintien===undefined) return r;
+  r.retenu = Math.max(r.dixieme||0, r.maintien||0);
+  r.regle = (r.dixieme||0) >= (r.maintien||0) ? "1/10e" : "maintien";
+  r.charges = r.taux!==null && r.taux!==undefined ? r2(r.retenu * r.taux/100) : 0;
+  if(r.taux===null || r.taux===undefined) r.warn = "Taux patronal non déterminé : renseignez les charges cumulées ou saisissez un taux.";
+  r.ok = r.retenu>0;
+  return r;
+}
+function cpCardHTML(S, i){
+  return `<div class="loan sal pdf-block" data-sal="${S.id}">
+    <div class="loan-h">
+      <span class="loan-n">${i+1}</span>
+      <input class="loan-name" data-cp="nom" value="${esc(S.nom)}" placeholder="NOM Prénom du salarié n°${i+1}">
+      <button class="btn ghost no-print" data-cp-del="${S.id}" title="Supprimer ce salarié" aria-label="Supprimer">✕</button>
+    </div>
+    <div class="loan-grid" style="grid-template-columns:repeat(5,1fr)">
+      <div class="field"><label>Brut mensuel de base</label><div class="suffix"><input data-cp="base" value="${esc(S.base)}" inputmode="decimal" placeholder="0,00"><span>€</span></div></div>
+      <div class="field"><label>Brut cumulé 12 mois</label><div class="suffix"><input data-cp="brut" value="${esc(S.brut)}" inputmode="decimal" placeholder="0,00"><span>€</span></div></div>
+      <div class="field"><label>Jours de CP acquis</label><div class="suffix"><input data-cp="jours" value="${esc(S.jours)}" inputmode="decimal" placeholder="0"><span>j</span></div></div>
+      <div class="field"><label>Charges patronales 12 mois</label><div class="suffix"><input data-cp="charges" value="${esc(S.charges)}" inputmode="decimal" placeholder="0,00"><span>€</span></div></div>
+      <div class="field"><label>Taux patronal</label><div class="suffix"><input data-cp="taux" value="${esc(S.taux)}" inputmode="decimal" placeholder="auto"><span>%</span></div></div>
+    </div>
+    <div class="loan-res" data-cp-res></div>
+  </div>`;
+}
+const pct = v=> v===null||v===undefined ? "—" : NF.format(v).replace(/ /g," ")+" %";
+function cpResHTML(S){
+  const r = cpCalc(S);
+  if(r.err) return `<div class="msg err">⚠ ${esc(r.err)}</div>`;
+  const tx = S.taux!=="" ? `${pct(r.taux)} <span class="tag" style="background:var(--violet-50);color:var(--violet)">saisi</span>` : (r.tauxAuto!==null ? `${pct(r.tauxAuto)} <span class="hint">(auto)</span>` : "—");
+  const best = k=> r.ok && r.regle===k ? ' class="best"' : "";
+  let h = `<div class="cp-res">
+    <div><span>Taux patronal</span><b>${tx}</b></div>
+    <div${best("1/10e")}><span>Règle du 1/10e</span><b>${r.dixieme!==undefined?eur(r.dixieme):"—"}</b></div>
+    <div${best("maintien")}><span>Maintien de salaire</span><b>${r.maintien!==undefined?eur(r.maintien):"—"}</b></div>
+    <div class="ret"><span>Provision brute retenue</span><b>${r.ok?eur(r.retenu):"—"}</b></div>
+    <div class="ret"><span>Charges provisionnées</span><b>${r.ok?eur(r.charges):"—"}</b></div>
+  </div>`;
+  if(r.warn) h += `<div class="msg warn">${esc(r.warn)}</div>`;
+  return h;
+}
+function cpTotals(){
+  const m = mod("cp", ()=>({mode:"ouvrables", sal:[newSal()]}));
+  const rows = m.sal.map(S=>({S,r:cpCalc(S)}));
+  const ok = rows.filter(x=>x.r.ok);
+  return { m, rows, brut:r2(ok.reduce((s,x)=>s+x.r.retenu,0)), ch:r2(ok.reduce((s,x)=>s+x.r.charges,0)) };
+}
+function cpLines(){
+  const t = cpTotals(); const lbl = `Provision congés payés au ${fr(state.params.date)}`;
+  const L = [];
+  if(t.brut) L.push({compte:"641200", lib:`${lbl} – salaires`, d:t.brut},{compte:"428200", lib:`${lbl} – salaires`, c:t.brut});
+  if(t.ch) L.push({compte:"645100", lib:`${lbl} – charges sociales`, d:t.ch},{compte:"438200", lib:`${lbl} – charges sociales`, c:t.ch});
+  return L;
+}
+function cpSummaryHTML(){
+  const t = cpTotals();
+  const errs = t.rows.filter(x=>x.r.err).length, inc = t.rows.filter(x=>!x.r.ok && !x.r.err && (x.S.nom||x.S.brut||x.S.base||x.S.jours)).length;
+  let h = `<div class="card pdf-block"><h2>Récapitulatif</h2>
+    <table class="tbl"><thead><tr><th>Salarié</th><th class="r">Jours</th><th>Règle</th><th class="r">Provision brute</th><th class="r">Taux</th><th class="r">Charges</th><th class="r">Total</th></tr></thead><tbody>
+    ${t.rows.map(({S,r},i)=>`<tr class="${r.ok?"":"dim"}"><td>${esc(S.nom)||`Salarié n°${i+1}`}</td><td class="r">${num(S.jours)??"—"}</td><td>${r.ok?r.regle:"—"}</td><td class="r">${r.ok?eur(r.retenu):"—"}</td><td class="r">${r.ok?pct(r.taux):"—"}</td><td class="r">${r.ok?eur(r.charges):"—"}</td><td class="r">${r.ok?eur(r2(r.retenu+r.charges)):"—"}</td></tr>`).join("")}
+    </tbody><tfoot><tr><td colspan="3">Total</td><td class="r">${eur(t.brut)}</td><td></td><td class="r">${eur(t.ch)}</td><td class="r">${eur(r2(t.brut+t.ch))}</td></tr></tfoot></table>
+    ${errs||inc?`<div class="msg warn">${errs?`${errs} salarié(s) en erreur`:""}${errs&&inc?" · ":""}${inc?`${inc} salarié(s) incomplet(s)`:""} : non inclus dans le total.</div>`:""}
+  </div>`;
+  const L = cpLines();
+  return h + (L.length ? entryHTML(L, `Provision congés payés au ${fr(state.params.date)}`)
+    : `<div class="card entry pdf-block"><h2>Écriture à comptabiliser</h2><p class="hint" style="margin:8px 0 0">L'écriture s'affichera dès qu'un salarié sera complet.</p></div>`);
+}
+MODULES.cp = {
+  html(){
+    const m = mod("cp", ()=>({mode:"ouvrables", sal:[newSal()]}));
+    return `<div class="card intro no-print"><p>Pour chaque salarié : la provision brute retenue est la plus favorable entre la <b>règle du 1/10e</b> (brut cumulé ÷ 10, au prorata des jours restants) et le <b>maintien de salaire</b> (brut mensuel de base ÷ ${CP_MODES[m.mode].mois} × jours). Le taux patronal est calculé automatiquement (charges ÷ brut cumulés) ; vous pouvez le remplacer par une saisie manuelle.</p></div>
+      <div class="card pdf-block cp-mode"><div class="field" style="max-width:320px"><label>Décompte des congés</label>
+        <select data-cp-mode>${Object.entries(CP_MODES).map(([k,v])=>`<option value="${k}" ${m.mode===k?"selected":""}>${v.label}</option>`).join("")}</select></div></div>
+      <div id="cp-sal">${m.sal.map(cpCardHTML).join("")}</div>
+      <button class="btn add no-print" data-cp-add>+ Ajouter un salarié</button>
+      <div id="cp-sum">${cpSummaryHTML()}</div>
+      <div class="msg warn pdf-block" style="margin-bottom:16px">Calcul simplifié : il ne tient pas compte de la part de mutuelle incluse dans les charges patronales, ni des contributions et taxes assises sur les salaires.</div>`;
+  },
+  after(root){ $$("[data-sal]", root).forEach(el=>{ const S=mod("cp").sal.find(x=>x.id===el.dataset.sal); $("[data-cp-res]",el).innerHTML=cpResHTML(S); }); },
+  lines: ()=>cpLines()
+};
+function cpRefresh(el){
+  if(el){ const S=state.mods.cp.sal.find(x=>x.id===el.dataset.sal); $("[data-cp-res]",el).innerHTML=cpResHTML(S); }
+  else MODULES.cp.after(document);
+  const s=$("#cp-sum"); if(s) s.innerHTML=cpSummaryHTML();
+}
+["input","change"].forEach(ev=>document.addEventListener(ev, e=>{
+  if(e.target.matches && e.target.matches("[data-cp-mode]")){ state.mods.cp.mode = e.target.value; save(); render(); return; }
+  const k = e.target.dataset && e.target.dataset.cp; if(!k) return;
+  const el = e.target.closest("[data-sal]"); const S = state.mods.cp.sal.find(x=>x.id===el.dataset.sal);
+  S[k] = e.target.value; save(); cpRefresh(el);
+}));
+document.addEventListener("click", e=>{
+  if(e.target.closest("[data-cp-add]")){
+    const m = state.mods.cp; const ns = newSal(); m.sal.push(ns); save();
+    const box=$("#cp-sal"); box.insertAdjacentHTML("beforeend", cpCardHTML(ns, m.sal.length-1)); cpRefresh(box.lastElementChild); $(".loan-name", box.lastElementChild).focus();
+  }
+  const del = e.target.closest("[data-cp-del]");
+  if(del){
+    const m = state.mods.cp; m.sal = m.sal.filter(x=>x.id!==del.dataset.cpDel); if(!m.sal.length) m.sal.push(newSal());
+    save(); $("#cp-sal").innerHTML = m.sal.map(cpCardHTML).join(""); cpRefresh();
+  }
+});
+
 /* Modules en test : actifs uniquement sur le domaine de recette webflow.io */
-const BETA = [];
+const BETA = ["cp"];
 if(!/webflow\.io$|^localhost$|^$/.test(location.hostname)) BETA.forEach(k=>delete MODULES[k]);
 
 function icneRefresh(loanEl){
