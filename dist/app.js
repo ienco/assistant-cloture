@@ -975,8 +975,194 @@ document.addEventListener("click", e=>{
   if(del){ const [mid,oi,lid]=del.dataset.balDel.split("|"); const {off}=balFind(`${mid}|${oi}|`); off.lines = off.lines.filter(l=>l.id!==lid); save(); render(); }
 });
 
+
+/* =========================================================
+   MODULE : VÉHICULES (taxes annuelles, amortissement, avantage en nature)
+   ========================================================= */
+/* Taxes sur l'affectation des véhicules de tourisme (ex-TVS) – barèmes par année civile */
+const VEH_TAX = {
+  2026: { co2:[[0,4,0],[5,45,1],[46,53,2],[54,85,3],[86,105,4],[106,125,10],[126,145,50],[146,165,60],[166,9999,65]],
+          pol:{ E:[0,0], "1":[100,130], P:[500,650] }, switch:"03-01" }
+};
+/* Abattements AN véhicules électriques (plafonds annuels) */
+const VEH_ELEC = { 2025:{ a70:4582, a50:2000.30 }, 2026:{ a70:4641.60, a50:2026.30 } };
+const FUELS = [["ess","Essence"],["die","Diesel"],["elec","Électrique"],["h2","Hydrogène"],["hyb_e","Hybride essence"],["hyb_d","Hybride diesel"],["phev_e","Hybride rechargeable essence"],["phev_d","Hybride rechargeable diesel"],["gaz","GPL / GNV"]];
+const fuelCat = f=> (f==="elec"||f==="h2") ? "E" : (f==="die"||f==="hyb_d"||f==="phev_d") ? "P" : "1";
+const CAT_LBL = { E:"Électrique / hydrogène", "1":"Catégorie 1", P:"Plus polluants" };
+const addDays = (d,n)=>new Date(pD(d)+n*864e5).toISOString().slice(0,10);
+const ovl = (a1,a2,b1,b2)=>{ const s=a1>b1?a1:b1, e=a2<b2?a2:b2; return e<s ? 0 : dayDiff(s,e)+1; };
+const exStart = ()=>addDays(addMonths(state.params.date,-12),1);
+const newVeh = ()=>({ id:uid(), nom:"", immat:"", d1immat:"", fuel:"ess", det:"achat", dstart:"", dend:"", duree:"", co2:"", val:"", bat:"", loyer:"", lnd:"", dmad:"", carbu:false, eco:false });
+function vehPlafond(co2){ return co2<20 ? 30000 : co2<50 ? 20300 : co2<=160 ? 18300 : 9900; }
+function vehCo2Tarif(co2, bar){ return bar.reduce((s,[a,b,t])=> co2>=a ? s + t*(Math.min(b,co2)-a+1) : s, 0); }
+function vehCalc(V){
+  const r = { err:null, warns:[] }, c = ctx(), close = state.params.date, x0 = exStart();
+  const co2 = num(V.co2), val = num(V.val), bat = num(V.bat)||0, loyer = num(V.loyer), lnd = num(V.lnd)||0, dur = num(V.duree);
+  if(V.co2!=="" && (co2===null||co2<0)) { r.err="Taux de CO2 invalide."; return r; }
+  if(V.dend && V.dstart && V.dend < V.dstart){ r.err="La date de sortie précède la date d'acquisition / de début de location."; return r; }
+  if(bat && val!==null && bat>val){ r.err="La valeur de la batterie dépasse la valeur du véhicule."; return r; }
+  if(!V.dstart) return r;
+  let end = V.dend || "9999-12-31";
+  if(V.det==="loc" && dur && !V.dend){ const e = addDays(addMonths(V.dstart, dur),-1); if(e<end) end=e; }
+  /* --- Taxes annuelles (sociétés uniquement, année civile de la clôture) --- */
+  if(c.societe){
+    const y = closeY(); let P = VEH_TAX[y];
+    if(!P){ const ys=Object.keys(VEH_TAX).map(Number).sort(); P = VEH_TAX[ys[ys.length-1]]; r.warns.push(`Barèmes ${y} non disponibles : barèmes ${ys[ys.length-1]} appliqués à titre provisoire.`); }
+    if(co2!==null){
+      const y0=`${y}-01-01`, y1=`${y}-12-31`, sw=`${y}-${P.switch}`, nY = dayDiff(y0,y1)+1;
+      const dA = ovl(V.dstart,end,y0,addDays(sw,-1)), dB = ovl(V.dstart,end,sw,y1), cat = fuelCat(V.fuel);
+      const tarif = vehCo2Tarif(co2, P.co2);
+      r.tax = { cat, tarif, jours:dA+dB, co2: r2(tarif*(dA+dB)/nY), pol: r2((P.pol[cat][0]*dA + P.pol[cat][1]*dB)/nY) };
+      r.tax.tot = r2(r.tax.co2 + r.tax.pol);
+    }
+  }
+  /* --- Amortissement / loyers non déductibles (exercice) --- */
+  const jEx = ovl(V.dstart,end,x0,close), nEx = dayDiff(x0,close)+1;
+  if(V.det==="achat" && val!==null && dur){
+    const amEnd = addDays(addMonths(V.dstart, dur),-1);
+    const j = ovl(V.dstart, end<amEnd?end:amEnd, x0, close);
+    const dot = r2(val/dur*12 * j/365);
+    const plaf = co2!==null ? vehPlafond(co2) : null;
+    const exc = plaf!==null ? Math.max(0, val - bat - plaf) : null;
+    r.am = { dot, plaf, base: val-bat, rei: exc!==null && val ? r2(dot*exc/val) : null };
+    if(co2===null) r.warns.push("Renseignez le CO2 pour déterminer le plafond d'amortissement.");
+  } else if(V.det==="loc"){
+    r.am = { loc:true, rei: r2(lnd * jEx/nEx) };
+  }
+  /* --- Avantage en nature (IS uniquement) --- */
+  if(c.is){
+    const mad = V.dmad || V.dstart, d0 = mad > x0 ? mad : x0;
+    const jours = ovl(mad, end, x0, close);
+    if(jours>0){
+      const recent = mad >= "2025-02-01";
+      let base = null, info = "";
+      if(V.det==="loc"){ base = loyer; const t = recent ? (V.carbu?67:50) : (V.carbu?40:30); r.an = { taux:t }; info = `${t} % du loyer annuel`; }
+      else if(val!==null){
+        base = val;
+        const tYoung = recent ? (V.carbu?20:15) : (V.carbu?12:9), tOld = recent ? (V.carbu?15:10) : (V.carbu?9:6);
+        let jY = jours, jO = 0;
+        if(V.d1immat){ const a5 = addMonths(V.d1immat, 60), eX = end<close?end:close; jY = ovl(mad,eX,x0,addDays(a5,-1)); jO = ovl(mad,eX,a5,close); }
+        else r.warns.push("Date de 1re immatriculation manquante : véhicule considéré de moins de 5 ans.");
+        r.an = { tYoung, tOld, jY, jO };
+        info = jO && jY ? `${tYoung} % puis ${tOld} % (plus de 5 ans)` : `${jO?tOld:tYoung} % du coût d'achat TTC`;
+      }
+      if(base!==null){
+        let brut = V.det==="loc" ? base*r.an.taux/100*jours/365 : base*(r.an.tYoung*r.an.jY + r.an.tOld*r.an.jO)/100/365;
+        brut = r2(brut); let abat = 0;
+        if(V.fuel==="elec"){
+          const E = VEH_ELEC[closeY()] || VEH_ELEC[2026];
+          if(recent){ if(V.eco) abat = Math.min(brut*0.7, E.a70*jours/365); else r.warns.push("Électrique non éco-scoré : pas d'abattement de 70 %."); }
+          else abat = Math.min(brut*0.5, E.a50*jours/365);
+        }
+        r.an.brut = brut; r.an.abat = r2(abat); r.an.net = r2(brut-abat); r.an.jours = jours; r.an.info = info; r.an.regime = recent ? "après le 01/02/2025" : "avant le 01/02/2025";
+      } else r.an = null;
+    }
+  }
+  return r;
+}
+function vehCardHTML(V, i){
+  const c = ctx(), loc = V.det==="loc";
+  const f = (k,lbl,ph="",type="text",extra="")=>`<div class="field"><label>${lbl}</label><input ${type==="date"?'type="date"':`inputmode="${type}"`} data-veh="${k}" value="${esc(V[k])}" placeholder="${ph}" ${extra}></div>`;
+  const m = (k,lbl,unit="€",ph="0,00")=>`<div class="field"><label>${lbl}</label><div class="suffix"><input data-veh="${k}" value="${esc(V[k])}" inputmode="decimal" placeholder="${ph}"><span>${unit}</span></div></div>`;
+  return `<div class="loan veh pdf-block" data-veh-id="${V.id}">
+    <div class="loan-h"><span class="loan-n">${i+1}</span>
+      <input class="loan-name" data-veh="nom" value="${esc(V.nom)}" placeholder="Désignation du véhicule n°${i+1} (marque, modèle)">
+      <button class="btn ghost no-print" data-veh-del="${V.id}" aria-label="Supprimer">✕</button></div>
+    <div class="loan-grid">
+      ${f("immat","Immatriculation","AA-123-AA")}
+      ${f("d1immat","Date de 1re immatriculation","","date")}
+      <div class="field"><label>Carburant</label><select data-veh="fuel">${FUELS.map(([k,l])=>`<option value="${k}" ${V.fuel===k?"selected":""}>${l}</option>`).join("")}</select></div>
+      ${m("co2","CO2 WLTP","g/km","0")}
+      <div class="field"><label>Mode de détention</label><select data-veh="det"><option value="achat" ${!loc?"selected":""}>Achat</option><option value="loc" ${loc?"selected":""}>Location</option></select></div>
+      ${f("dstart", loc?"Début de location":"Date d'acquisition","","date")}
+      ${f("dend","Date de sortie (cession, fin de contrat)","","date")}
+      ${m("duree", loc?"Durée du contrat":"Durée d'amortissement","mois","0")}
+      ${loc ? `${m("loyer","Loyer annuel (location, entretien, assurance)")}${m("lnd","Loyer non déductible annuel")}`
+            : `${m("val","Valeur amortissable TTC")}${m("bat","dont valeur batterie")}`}
+      ${c.is ? `${f("dmad","Mise à disposition du véhicule","","date")}
+        <div class="field chk"><label><input type="checkbox" data-veh="carbu" ${V.carbu?"checked":""}> Carburant personnel pris en charge par la société</label>
+        ${V.fuel==="elec"?`<label><input type="checkbox" data-veh="eco" ${V.eco?"checked":""}> Modèle éco-scoré (liste ADEME)</label>`:""}</div>` : ""}
+    </div>
+    <div class="loan-res" data-veh-res></div>
+  </div>`;
+}
+function vehResHTML(V){
+  const r = vehCalc(V), c = ctx();
+  if(r.err) return `<div class="msg err">⚠ ${esc(r.err)}</div>`;
+  const box = (t,v,sub="",cls="")=>`<div class="${cls}"><span>${t}</span><b>${v}</b>${sub?`<em>${sub}</em>`:""}</div>`;
+  let h = `<div class="cp-res veh-res">`;
+  if(c.societe) h += r.tax ? box("Taxe annuelle", eur(r.tax.tot), `CO2 ${eur(r.tax.co2)} · polluants ${eur(r.tax.pol)} · ${r.tax.jours} j · ${CAT_LBL[r.tax.cat]}`, "ret") : box("Taxe annuelle","—","date et CO2 requis");
+  if(r.am && !r.am.loc) h += box("Dotation de l'exercice", eur(r.am.dot), r.am.plaf?`Plafond ${eur(r.am.plaf)}${num(V.bat)?" hors batterie":""}`:"") + box("Part à réintégrer", r.am.rei!==null?eur(r.am.rei):"—", "", "ret");
+  else if(r.am && r.am.loc) h += box("Loyers à réintégrer", eur(r.am.rei), "prorata de l'exercice", "ret");
+  else h += box("Amortissement","—", V.det==="achat"?"valeur et durée requises":"");
+  if(c.is) h += r.an ? box("Avantage en nature", eur(r.an.net), `${r.an.info} · ${r.an.jours} j · régime ${r.an.regime}${r.an.abat?` · abattement ${eur(r.an.abat)}`:""}`, "ret") : box("Avantage en nature","—","coût et dates requis");
+  h += `</div>`;
+  r.warns.forEach(w=> h += `<div class="msg warn">${esc(w)}</div>`);
+  return h;
+}
+function vehTotals(){
+  const m = mod("vehicules", ()=>({ list:[newVeh()] }));
+  const rows = m.list.map(V=>({V, r:vehCalc(V)}));
+  const sum = f=>r2(rows.reduce((s,x)=>s+(f(x.r)||0),0));
+  const co2 = Math.round(sum(r=>r.tax&&r.tax.co2)), pol = Math.round(sum(r=>r.tax&&r.tax.pol));
+  return { m, rows, co2, pol, tax: co2+pol, rei: sum(r=>r.am&&r.am.rei), an: sum(r=>r.an&&r.an.net) };
+}
+function vehLines(){
+  const t = vehTotals(), c = ctx(), d = fr(state.params.date), L = [];
+  if(c.societe && t.tax) L.push({compte:"635140", lib:`Taxes annuelles sur les véhicules au ${d}`, d:t.tax},{compte:"448600", lib:`Taxes annuelles sur les véhicules au ${d}`, c:t.tax});
+  if(c.is && t.an) L.push({compte:"641140", lib:`Avantage en nature véhicules au ${d}`, d:t.an},{compte:"649000", lib:`Avantage en nature véhicules au ${d}`, c:t.an});
+  return L;
+}
+function vehSummaryHTML(){
+  const t = vehTotals(), c = ctx();
+  let h = `<div class="card pdf-block"><h2>Récapitulatif</h2>
+    <table class="tbl"><thead><tr><th>Véhicule</th>${c.societe?'<th class="r">Taxe annuelle</th>':""}<th class="r">Part non déductible</th>${c.is?'<th class="r">Avantage en nature</th>':""}</tr></thead><tbody>
+    ${t.rows.map(({V,r},i)=>`<tr><td>${esc(V.nom)||`Véhicule n°${i+1}`}${V.immat?` <span class="hint">${esc(V.immat)}</span>`:""}</td>${c.societe?`<td class="r">${r.tax?eur(r.tax.tot):"—"}</td>`:""}<td class="r">${r.am&&r.am.rei!==null&&r.am.rei!==undefined?eur(r.am.rei):"—"}</td>${c.is?`<td class="r">${r.an?eur(r.an.net):"—"}</td>`:""}</tr>`).join("")}
+    </tbody><tfoot><tr><td>Total</td>${c.societe?`<td class="r">${eur(t.tax)}</td>`:""}<td class="r">${eur(t.rei)}</td>${c.is?`<td class="r">${eur(t.an)}</td>`:""}</tr></tfoot></table>
+    ${c.societe?`<p class="hint" style="margin:8px 0 0">Taxe à déclarer arrondie à l'euro par taxe : CO2 ${eur(t.co2)} + polluants ${eur(t.pol)}. La taxe n'est pas déductible du résultat fiscal.</p>`:""}
+    <p class="hint" style="margin:6px 0 0">La part d'amortissement ou de loyer non déductible est à réintégrer extra-comptablement (pas d'écriture).</p></div>`;
+  const L = vehLines();
+  return h + (L.length ? entryHTML(L, `Véhicules au ${fr(state.params.date)}`)
+    : `<div class="card entry pdf-block"><h2>Écriture à comptabiliser</h2><p class="hint" style="margin:8px 0 0">${!c.societe && !c.is ? "Office individuel à l'IR : ni taxe annuelle, ni avantage en nature calculés." : "L'écriture s'affichera dès qu'un véhicule sera complet."}</p></div>`);
+}
+MODULES.vehicules = {
+  html(){
+    const m = mod("vehicules", ()=>({ list:[newVeh()] })), c = ctx();
+    const scope = [c.societe?"la taxe annuelle (sociétés uniquement, jours réels d'affectation sur l'année civile)":null, "l'amortissement de l'exercice et sa part non déductible", c.is?"l'avantage en nature des notaires associés (régimes IS)":null].filter(Boolean).join(", ");
+    return `<div class="card intro no-print"><p>Pour chaque véhicule de tourisme, l'outil calcule ${scope}. Les plafonds d'amortissement suivent la norme WLTP (30 000 / 20 300 / 18 300 / 9 900 €) ; la batterie facturée séparément sort du plafond.</p></div>
+      <div id="veh-list">${m.list.map(vehCardHTML).join("")}</div>
+      <button class="btn add no-print" data-veh-add>+ Ajouter un véhicule</button>
+      <div id="veh-sum">${vehSummaryHTML()}</div>`;
+  },
+  after(root){ $$("[data-veh-id]", root).forEach(el=>{ const V=mod("vehicules").list.find(x=>x.id===el.dataset.vehId); $("[data-veh-res]",el).innerHTML=vehResHTML(V); }); },
+  lines: ()=>vehLines()
+};
+function vehRefresh(el){
+  if(el){ const V=state.mods.vehicules.list.find(x=>x.id===el.dataset.vehId); $("[data-veh-res]",el).innerHTML=vehResHTML(V); }
+  else MODULES.vehicules.after(document);
+  const s=$("#veh-sum"); if(s) s.innerHTML=vehSummaryHTML();
+}
+["input","change"].forEach(ev=>document.addEventListener(ev, e=>{
+  const k = e.target.dataset && e.target.dataset.veh; if(!k) return;
+  const el = e.target.closest("[data-veh-id]"); const V = state.mods.vehicules.list.find(x=>x.id===el.dataset.vehId);
+  V[k] = e.target.type==="checkbox" ? e.target.checked : e.target.value; save();
+  if(ev==="change" && (k==="det"||k==="fuel")){ const i=state.mods.vehicules.list.indexOf(V); el.outerHTML = vehCardHTML(V,i); vehRefresh($(`[data-veh-id="${V.id}"]`)); }
+  else vehRefresh(el);
+}));
+document.addEventListener("click", e=>{
+  if(e.target.closest("[data-veh-add]")){
+    const m = state.mods.vehicules; const nv = newVeh(); m.list.push(nv); save();
+    const box=$("#veh-list"); box.insertAdjacentHTML("beforeend", vehCardHTML(nv, m.list.length-1)); vehRefresh(box.lastElementChild); $(".loan-name", box.lastElementChild).focus();
+  }
+  const del = e.target.closest("[data-veh-del]");
+  if(del){
+    const m = state.mods.vehicules; m.list = m.list.filter(x=>x.id!==del.dataset.vehDel); if(!m.list.length) m.list.push(newVeh());
+    save(); $("#veh-list").innerHTML = m.list.map(vehCardHTML).join(""); vehRefresh();
+  }
+});
+
 /* Modules en test : actifs uniquement sur le domaine de recette webflow.io */
-const BETA = [];
+const BETA = ["vehicules"];
 if(!/webflow\.io$|^localhost$|^$/.test(location.hostname)) BETA.forEach(k=>delete MODULES[k]);
 
 function icneRefresh(loanEl){
