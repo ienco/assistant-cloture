@@ -1018,7 +1018,7 @@ function vehCalc(V){
     const dot = r2(val/dur*12 * j/365);
     const plaf = co2!==null ? vehPlafond(co2) : null;
     const exc = plaf!==null ? Math.max(0, val - bat - plaf) : null;
-    r.am = { dot, plaf, base: val-bat, rei: exc!==null && val ? r2(dot*exc/val) : null };
+    r.am = { dot, plaf, base: val-bat, exc, rei: exc!==null && val ? r2(dot*exc/val) : null };
     if(co2===null) r.warns.push("Renseignez le CO2 pour déterminer le plafond d'amortissement.");
   } else if(V.det==="loc"){
     r.am = { loc:true, rei: r2(lnd * jEx/nEx) };
@@ -1086,8 +1086,9 @@ function vehResHTML(V){
   const box = (t,v,sub="",cls="")=>`<div class="${cls}"><span>${t}</span><b>${v}</b>${sub?`<em>${sub}</em>`:""}</div>`;
   let h = `<div class="cp-res veh-res">`;
   if(c.societe) h += r.tax ? box("Taxe annuelle", eur(r.tax.tot), `CO2 ${eur(r.tax.co2)} · polluants ${eur(r.tax.pol)} · ${r.tax.jours} j · ${CAT_LBL[r.tax.cat]}`, "ret") : box("Taxe annuelle","—","date et CO2 requis");
-  if(r.am && !r.am.loc) h += box("Dotation de l'exercice", eur(r.am.dot), r.am.plaf?`Plafond ${eur(r.am.plaf)}${num(V.bat)?" hors batterie":""}`:"") + box("Part à réintégrer", r.am.rei!==null?eur(r.am.rei):"—", "", "ret");
-  else if(r.am && r.am.loc) h += box("Loyers à réintégrer", eur(r.am.rei), "prorata de l'exercice", "ret");
+  if(r.am && !r.am.loc) h += box("Dotation de l'exercice", eur(r.am.dot), r.am.plaf?`dont déductible ${r.am.rei!==null?eur(r2(r.am.dot-r.am.rei)):"—"} · plafond ${eur(r.am.plaf)}${num(V.bat)?" hors batterie":""}`:"")
+    + box("Réintégration de l'exercice", r.am.rei!==null?eur(r.am.rei):"—", r.am.exc!==null?`sur ${eur(r.am.exc)} non déductibles sur toute la durée d'amortissement`:"", "ret");
+  else if(r.am && r.am.loc) h += box("Réintégration de l'exercice", eur(r.am.rei), `loyer non déductible annuel ${eur(num(V.lnd)||0)}, au prorata de l'exercice`, "ret");
   else h += box("Amortissement","—", V.det==="achat"?"valeur et durée requises":"");
   if(c.is) h += r.an ? box("Avantage en nature", eur(r.an.net), `${r.an.info} · ${r.an.jours} j · régime ${r.an.regime}${r.an.abat?` · abattement ${eur(r.an.abat)}`:""}`, "ret") : box("Avantage en nature","—","coût et dates requis");
   h += `</div>`;
@@ -1110,11 +1111,11 @@ function vehLines(){
 function vehSummaryHTML(){
   const t = vehTotals(), c = ctx();
   let h = `<div class="card pdf-block"><h2>Récapitulatif</h2>
-    <table class="tbl"><thead><tr><th>Véhicule</th>${c.societe?'<th class="r">Taxe annuelle</th>':""}<th class="r">Part non déductible</th>${c.is?'<th class="r">Avantage en nature</th>':""}</tr></thead><tbody>
+    <table class="tbl"><thead><tr><th>Véhicule</th>${c.societe?'<th class="r">Taxe annuelle</th>':""}<th class="r">Réintégration de l'exercice</th>${c.is?'<th class="r">Avantage en nature</th>':""}</tr></thead><tbody>
     ${t.rows.map(({V,r},i)=>`<tr><td>${esc(V.nom)||`Véhicule n°${i+1}`}${V.immat?` <span class="hint">${esc(V.immat)}</span>`:""}</td>${c.societe?`<td class="r">${r.tax?eur(r.tax.tot):"—"}</td>`:""}<td class="r">${r.am&&r.am.rei!==null&&r.am.rei!==undefined?eur(r.am.rei):"—"}</td>${c.is?`<td class="r">${r.an?eur(r.an.net):"—"}</td>`:""}</tr>`).join("")}
     </tbody><tfoot><tr><td>Total</td>${c.societe?`<td class="r">${eur(t.tax)}</td>`:""}<td class="r">${eur(t.rei)}</td>${c.is?`<td class="r">${eur(t.an)}</td>`:""}</tr></tfoot></table>
     ${c.societe?`<p class="hint" style="margin:8px 0 0">Taxe à déclarer arrondie à l'euro par taxe : CO2 ${eur(t.co2)} + polluants ${eur(t.pol)}. La taxe n'est pas déductible du résultat fiscal.</p>`:""}
-    <p class="hint" style="margin:6px 0 0">La part d'amortissement ou de loyer non déductible est à réintégrer extra-comptablement (pas d'écriture).</p></div>`;
+    <p class="hint" style="margin:6px 0 0">Réintégration extra-comptable au titre de l'exercice clos le ${fr(state.params.date)} (pas d'écriture) : quote-part non déductible de la dotation ou des loyers de l'exercice.</p></div>`;
   const L = vehLines();
   return h + (L.length ? entryHTML(L, `Véhicules au ${fr(state.params.date)}`)
     : `<div class="card entry pdf-block"><h2>Écriture à comptabiliser</h2><p class="hint" style="margin:8px 0 0">${!c.societe && !c.is ? "Office individuel à l'IR : ni taxe annuelle, ni avantage en nature calculés." : "L'écriture s'affichera dès qu'un véhicule sera complet."}</p></div>`);
