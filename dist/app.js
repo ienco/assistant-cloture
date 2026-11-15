@@ -1162,7 +1162,7 @@ document.addEventListener("click", e=>{
 });
 
 /* Modules en test : actifs uniquement sur le domaine de recette webflow.io */
-const BETA = ["vehicules"];
+const BETA = [];
 if(!/webflow\.io$|^localhost$|^$/.test(location.hostname)) BETA.forEach(k=>delete MODULES[k]);
 
 function icneRefresh(loanEl){
