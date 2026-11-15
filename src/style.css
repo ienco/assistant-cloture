@@ -42,8 +42,12 @@ main{padding:28px 32px 60px;max-width:1100px;width:100%}
 .hint a{cursor:pointer}
 .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--warn-50);color:var(--warn)}
 
-nav .nav-cycle{margin:14px 4px 4px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:8px}
-nav .nav-cycle i{width:7px;height:7px;border-radius:50%;background:var(--vert);display:inline-block}
+nav .nav-cycle{text-decoration:none;padding:3px 6px;border-radius:6px;margin:12px 0 2px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:8px}
+nav .nav-cycle i{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--vert);display:inline-block;flex:none}
+nav .nav-cycle i.full{background:var(--vert)}
+nav .nav-cycle:hover{color:var(--violet);background:var(--bg)}
+nav .nav-cycle .nc{margin-left:auto;font-weight:600;letter-spacing:0}
+.cyc{scroll-margin-top:70px}
 nav a.nl{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;text-decoration:none;color:var(--ink);font-size:13.5px}
 nav a.nl:hover{background:var(--bg)}
 nav a.nl.active{background:var(--violet-50);color:var(--violet);font-weight:600}

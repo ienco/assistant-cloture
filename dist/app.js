@@ -26,7 +26,7 @@ const CYCLES = [
   ]},
   { id:"produits", label:"Produits d'exploitation", tasks:[
     { id:"particip",  label:"Participations à recevoir" },
-    { id:"autresprod",label:"Autres produits à recevoir (remboursements de formation et subventions)" }
+    { id:"autresprod",label:"Autres produits à recevoir (subventions)" }
   ]},
   { id:"immobilisations", label:"Immobilisations", tasks:[
     { id:"dotations", label:"Dotations aux amortissements" },
@@ -146,8 +146,8 @@ function renderNav(){
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>Checklist de clôture</a>`;
   visibleCycles().forEach(cy=>{
     const tabs = cy.tasks.filter(t=>t.tab);
-    if(!tabs.length) return;
-    h += `<div class="nav-cycle"><i></i>${esc(cy.label)}</div>`;
+    const d = cy.tasks.filter(t=>state.checks[t.id]).length;
+    h += `<a class="nav-cycle" href="#accueil" data-goto-cycle="${cy.id}"><i class="${cy.tasks.length && d===cy.tasks.length?"full":""}"></i>${esc(cy.label)}<span class="nc">${cy.tasks.length?`${d}/${cy.tasks.length}`:""}</span></a>`;
     tabs.forEach(t=>{
       h += `<a class="nl ${cur===t.id?"active":""} ${state.checks[t.id]?"done":""}" href="#${t.id}"><span class="dot"></span>${esc(t.short||t.label)}</a>`;
     });
@@ -170,7 +170,7 @@ function viewHome(){
     <div class="prog pdf-block"><div class="bar"><i style="width:${pct}%"></i></div><b>${done} / ${all.length} tâches – ${pct} %</b></div>`;
   cys.forEach((cy,i)=>{
     const d = cy.tasks.filter(t=>state.checks[t.id]).length;
-    h += `<div class="cyc"><div class="cyc-h pdf-block"><span class="n">${i+1}</span><h2>${esc(cy.label)}</h2><span class="c">${cy.tasks.length?`${d}/${cy.tasks.length}`:""}</span></div>`;
+    h += `<div class="cyc" id="cyc-${cy.id}"><div class="cyc-h pdf-block"><span class="n">${i+1}</span><h2>${esc(cy.label)}</h2><span class="c">${cy.tasks.length?`${d}/${cy.tasks.length}`:""}</span></div>`;
     if(!cy.tasks.length) h += `<div class="empty pdf-block">Aucune tâche définie pour ce cycle.</div>`;
     cy.tasks.forEach(t=>{
       const on = !!state.checks[t.id];
@@ -813,6 +813,13 @@ document.addEventListener("input", e=>{
   if(k){ state.fields[k] = e.target.value; save(); }
 });
 window.addEventListener("hashchange", ()=>{ showRoute(); window.scrollTo(0,0); });
+/* Barre latérale : un clic sur un cycle ouvre la checklist sur ce cycle */
+document.addEventListener("click", e=>{
+  const a = e.target.closest("[data-goto-cycle]"); if(!a) return;
+  e.preventDefault();
+  if(location.hash!=="#accueil") location.hash = "accueil";
+  setTimeout(()=>{ const el=document.getElementById("cyc-"+a.dataset.gotoCycle); if(el) el.scrollIntoView({behavior:"smooth", block:"start"}); }, 30);
+});
 $("#menuBtn").addEventListener("click", ()=>$("#side").classList.toggle("open"));
 
 /* ---------- toast / modal ---------- */
