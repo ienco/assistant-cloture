@@ -24,6 +24,10 @@ const CYCLES = [
     { id:"cca",      label:"Charges constatées d'avance", tab:true },
     { id:"ab488",    label:"Annulation des comptes d'abonnement de charges (488)" }
   ]},
+  { id:"produits", label:"Produits d'exploitation", tasks:[
+    { id:"particip",  label:"Participations à recevoir" },
+    { id:"autresprod",label:"Autres produits à recevoir (remboursements de formation et subventions)" }
+  ]},
   { id:"immobilisations", label:"Immobilisations", tasks:[
     { id:"dotations", label:"Dotations aux amortissements" },
     { id:"vehicules", label:"Véhicules : avantages en nature, TVS, dotation excédentaire, amortissement batterie", short:"Véhicules", tab:true }
