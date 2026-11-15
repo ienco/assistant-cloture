@@ -796,8 +796,187 @@ document.addEventListener("click", e=>{
   }
 });
 
+
+/* =========================================================
+   CONTRÔLES TVA ET CRPCEN – éléments communs
+   ========================================================= */
+const MOIS = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+const nOffices = ()=>ctx().offices;
+const closeY = ()=>Number(state.params.date.slice(0,4)), closeM = ()=>Number(state.params.date.slice(5,7));
+/* Lignes de balance (classe 7) : signe + / − et montant positif */
+const BAL_TVA = [["Classe 70 – soldes créditeurs","+"],["Moins remises (709…)","-"],["Émoluments écrêtés","-"],["Plus produits exceptionnels","+"]];
+const BAL_CRP = [["Classe 70 – soldes créditeurs","+"],["Moins compte 706800","-"],["Moins comptes 70851…","-"],["Moins débours","-"],["Émoluments écrêtés","-"],["Plus produits exceptionnels","+"]];
+const newBal = tpl=>tpl.map(([lib,sg])=>({ id:uid(), lib, sg, amt:"", fixed:true }));
+function balTotal(lines){ return r2(lines.reduce((s,l)=>{ const v=num(l.amt); return v===null ? s : s + (l.sg==="-"?-v:v); },0)); }
+function ensureOffices(list, make){ const n=nOffices(); while(list.length<n) list.push(make(list.length)); return list; }
+const actOff = m=>m.offices.slice(0, nOffices());
+function balHTML(modId, oi, off){
+  return `<table class="tbl bal"><thead><tr><th>Comptes</th><th style="width:44px"></th><th class="r" style="width:150px">Soldes</th><th style="width:34px"></th></tr></thead><tbody>
+    ${off.lines.map(l=>`<tr data-bal-line="${l.id}">
+      <td>${l.fixed?esc(l.lib):`<input class="bal-lib" data-bal="${modId}|${oi}|${l.id}|lib" value="${esc(l.lib)}" placeholder="Autre ajustement">`}</td>
+      <td><button class="sg ${l.sg==="-"?"neg":""}" data-bal-sign="${modId}|${oi}|${l.id}" title="Ajouter ou retrancher">${l.sg==="-"?"−":"+"}</button></td>
+      <td><div class="suffix"><input data-bal="${modId}|${oi}|${l.id}|amt" value="${esc(l.amt)}" inputmode="decimal" placeholder="0,00"><span>€</span></div></td>
+      <td>${l.fixed?"":`<button class="btn ghost no-print" data-bal-del="${modId}|${oi}|${l.id}" aria-label="Supprimer">✕</button>`}</td></tr>`).join("")}
+    </tbody><tfoot><tr><td colspan="2">Total des bases</td><td class="r" data-baltot="${modId}|${oi}">${eur(balTotal(off.lines))}</td><td></td></tr></tfoot></table>
+    <button class="btn add no-print" data-bal-add="${modId}|${oi}" style="margin:10px 0 0">+ Ajouter une ligne</button>`;
+}
+const okBadge = (ecart, tol=1)=> Math.abs(ecart)<=tol ? `<span class="st ok">✓ Concordant</span>` : `<span class="st ko">Écart à justifier</span>`;
+function ctrlRow(label, a, b, la, lb){
+  const e = r2(a-b);
+  return `<tr><td>${label}</td><td class="r">${eur(a)}<div class="hint">${la}</div></td><td class="r">${eur(b)}<div class="hint">${lb}</div></td><td class="r ${Math.abs(e)>1?"neg-t":""}">${eur(e)}</td><td>${okBadge(e)}</td></tr>`;
+}
+const ctrlHead = `<table class="tbl ctrl"><thead><tr><th>Contrôle</th><th class="r">Montant A</th><th class="r">Montant B</th><th class="r">Écart A − B</th><th>Statut</th></tr></thead><tbody>`;
+
+/* =========================================================
+   MODULE : CONTRÔLE DE TVA
+   ========================================================= */
+function tvaState(){
+  const m = mod("tva", ()=>({ decl:{}, offices:[], s4457:"" }));
+  m.offices = ensureOffices(m.offices, i=>({ nom:"", lines:newBal(BAL_TVA) }));
+  return m;
+}
+const tvaMonths = ()=>{ const y=closeY(); return Array.from({length:closeM()},(_,i)=>`${y}-${String(i+1).padStart(2,"0")}`); };
+function tvaDecl(k){ const d = tvaState().decl[k] || {}; const b=num(d.b), im=num(d.im)||0, de=num(d.de)||0;
+  const col = b===null ? null : Math.round(b*0.2); return { b, im, de, col, due: col===null ? null : col-im-de }; }
+function tvaTotals(){
+  const m = tvaState(), ks = tvaMonths();
+  const rows = ks.map(k=>tvaDecl(k));
+  const T = { b:0, col:0, im:0, de:0, due:0 };
+  rows.forEach(r=>{ T.b+=r.b||0; T.col+=r.col||0; T.im+=r.im; T.de+=r.de; T.due+=r.due||0; });
+  Object.keys(T).forEach(k=>T[k]=r2(T[k]));
+  const offs = actOff(m).map(o=>balTotal(o.lines)); const bal = r2(offs.reduce((s,x)=>s+x,0));
+  return { T, offs, bal, theo:r2(bal*0.2), s4457:num(m.s4457) };
+}
+function tvaCtrlHTML(){
+  const t = tvaTotals(), m = tvaState();
+  let h = `<div class="card pdf-block"><h2>Contrôles</h2>${ctrlHead}
+    ${ctrlRow("Bases HT", t.bal, t.T.b, "Balance classe 7", "Bases déclarées (CA3)")}
+    ${ctrlRow("TVA collectée", t.theo, t.T.col, "Théorique (20 % balance)", "Déclarée (CA3)")}`;
+  if(t.s4457!==null) h += ctrlRow("Écart de TVA vs solde 4457", r2(t.theo-t.T.col), t.s4457, "TVA non encore déclarée", "Solde compte 4457");
+  h += `</tbody></table>
+    <p class="hint" style="margin:8px 0 0">${t.s4457===null?"En cours de mois, saisissez le solde du compte 4457 : l'écart entre la TVA théorique et la TVA déclarée doit correspondre à la TVA restant à déclarer.":"Tolérance d'arrondi : 1 €."}</p></div>`;
+  return h;
+}
+MODULES.tva = {
+  html(){
+    const m = tvaState(), y = closeY(), multi = nOffices()>1;
+    const rows = tvaMonths().map(k=>{ const d=m.decl[k]||{}; const i=Number(k.slice(5))-1;
+      return `<tr data-tva-row="${k}"><td>${MOIS[i]}</td>
+        <td><div class="suffix"><input data-tva="${k}|b" value="${esc(d.b||"")}" inputmode="decimal" placeholder="0"><span>€</span></div></td>
+        <td class="r" data-tva-col></td>
+        <td><div class="suffix"><input data-tva="${k}|im" value="${esc(d.im||"")}" inputmode="decimal" placeholder="0"><span>€</span></div></td>
+        <td><div class="suffix"><input data-tva="${k}|de" value="${esc(d.de||"")}" inputmode="decimal" placeholder="0"><span>€</span></div></td>
+        <td class="r" data-tva-due></td></tr>`; }).join("");
+    return `<div class="card intro no-print"><p>Présentation attendue par les inspecteurs comptables. Le contrôle porte sur les <b>bases HT déclarées</b> (CA3) rapprochées des produits de classe 7 de la balance${multi?" (une balance par office, une seule déclaration pour la société)":""}. Les autres colonnes de la déclaration sont indicatives ; la TVA collectée est recalculée à 20 % arrondie à l'euro.</p></div>
+      <div class="card pdf-block"><h2>Déclarations CA3 – ${y}</h2>
+        <table class="tbl decl"><thead><tr><th>Mois</th><th class="r">Bases HT</th><th class="r">TVA collectée</th><th class="r">TVA / immo.</th><th class="r">TVA déductible</th><th class="r">TVA due</th></tr></thead>
+        <tbody>${rows}</tbody><tfoot><tr data-tva-tot><td>Total</td><td class="r"></td><td class="r"></td><td class="r"></td><td class="r"></td><td class="r"></td></tr></tfoot></table></div>
+      <div class="bal-grid ${multi?"multi":""}">${actOff(m).map((o,oi)=>`<div class="card pdf-block"><h2>Balance – classe 7${multi?` · office n°${oi+1}`:""}</h2>
+        ${multi?`<input class="off-name" data-offname="tva|${oi}" value="${esc(o.nom)}" placeholder="Nom de l'office n°${oi+1}">`:""}
+        ${balHTML("tva",oi,o)}
+        <div class="theo">TVA théorique (20 %) : <b data-baltheo="tva|${oi}">${eur(r2(balTotal(o.lines)*0.2))}</b></div></div>`).join("")}</div>
+      <div class="card pdf-block"><div class="field" style="max-width:300px"><label>Solde du compte 4457 (TVA collectée restant à déclarer)</label>
+        <div class="suffix"><input data-tva4457 value="${esc(m.s4457)}" inputmode="decimal" placeholder="Facultatif"><span>€</span></div></div></div>
+      <div id="tva-ctrl">${tvaCtrlHTML()}</div>`;
+  },
+  after(root){ tvaRefresh(); },
+  lines: ()=>[]
+};
+function tvaRefresh(){
+  if(!$("[data-view=tva]")) return;
+  tvaMonths().forEach(k=>{ const tr=$(`[data-tva-row="${k}"]`); if(!tr) return; const r=tvaDecl(k);
+    $("[data-tva-col]",tr).textContent = r.col===null?"—":eur(r.col); $("[data-tva-due]",tr).textContent = r.due===null?"—":eur(r.due); });
+  const t = tvaTotals(), tot=$("[data-tva-tot]");
+  if(tot){ const c=tot.children; c[1].textContent=eur(t.T.b); c[2].textContent=eur(t.T.col); c[3].textContent=eur(t.T.im); c[4].textContent=eur(t.T.de); c[5].textContent=eur(t.T.due); }
+  t.offs.forEach((v,oi)=>{ const a=$(`[data-baltot="tva|${oi}"]`); if(a) a.textContent=eur(v); const b=$(`[data-baltheo="tva|${oi}"]`); if(b) b.textContent=eur(r2(v*0.2)); });
+  const c=$("#tva-ctrl"); if(c) c.innerHTML=tvaCtrlHTML();
+}
+
+/* =========================================================
+   MODULE : CONTRÔLE CRPCEN (une section par office)
+   ========================================================= */
+function crpState(){
+  const m = mod("crpcen", ()=>({ offices:[] }));
+  m.offices = ensureOffices(m.offices, i=>({ nom:"", num:"", decl:{}, lines:newBal(BAL_CRP), s645520:"", s435200:"", com:"" }));
+  return m;
+}
+const crpQuarters = ()=>Array.from({length:Math.ceil(closeM()/3)},(_,i)=>i+1);
+function crpTotals(o){
+  const qs = crpQuarters(); let b=0;
+  qs.forEach(q=>{ b += num((o.decl||{})[q])||0; });
+  const bal = balTotal(o.lines);
+  return { b:r2(b), cot:r2(b*0.04), bal, du:r2(bal*0.04), s645:num(o.s645520), s435:num(o.s435200) };
+}
+function crpCtrlHTML(oi){
+  const o = crpState().offices[oi], t = crpTotals(o);
+  let h = `${ctrlHead}${ctrlRow("Bases", t.bal, t.b, "Balance classe 7", "Bases déclarées")}`;
+  if(t.s645!==null) h += ctrlRow("Charge CRPCEN", t.du, t.s645, "4 % des produits de la balance", "Solde compte 645520");
+  if(t.s435!==null) h += ctrlRow("Cotisations restant à déclarer", r2(t.du-t.cot), t.s435, "Dues − déclarées", "Solde compte 435200");
+  return h + `</tbody></table>`;
+}
+MODULES.crpcen = {
+  html(){
+    const m = crpState(), y = closeY(), multi = nOffices()>1;
+    const QL = ["1er trimestre","2e trimestre","3e trimestre","4e trimestre"];
+    return `<div class="card intro no-print"><p>Contrôle du 4 % CRPCEN : les bases déclarées chaque trimestre sont rapprochées des produits de classe 7 de la balance (hors 706800, 70851…, débours). Le solde du <b>645520</b> doit représenter 4 % des produits ; en cours d'année, le solde du <b>435200</b> doit correspondre aux cotisations du trimestre non encore déclaré.${multi?" Une déclaration et un contrôle par office.":""}</p></div>
+      ${actOff(m).map((o,oi)=>`<div class="crp-off" data-crp-off="${oi}">
+        ${multi?`<h2 class="off-title">Office n°${oi+1}</h2>`:""}
+        <div class="card pdf-block"><div class="loan-grid" style="grid-template-columns:1fr 1fr">
+          <div class="field"><label>Office</label><input data-crpf="${oi}|nom" value="${esc(o.nom)}" placeholder="Nom de l'office"></div>
+          <div class="field"><label>N° CRPCEN</label><input data-crpf="${oi}|num" value="${esc(o.num)}" placeholder="N° d'employeur"></div></div></div>
+        <div class="bal-grid multi">
+          <div class="card pdf-block"><h2>Déclarations CRPCEN – ${y}</h2>
+            <table class="tbl"><thead><tr><th>Trimestre</th><th class="r">Bases</th><th class="r">Cotisations dues (4 %)</th></tr></thead><tbody>
+            ${crpQuarters().map(q=>`<tr><td>${QL[q-1]}</td><td><div class="suffix"><input data-crpq="${oi}|${q}" value="${esc((o.decl||{})[q]||"")}" inputmode="decimal" placeholder="0"><span>€</span></div></td><td class="r" data-crpcot="${oi}|${q}"></td></tr>`).join("")}
+            </tbody><tfoot><tr><td>Total</td><td class="r" data-crptb="${oi}"></td><td class="r" data-crptc="${oi}"></td></tr></tfoot></table></div>
+          <div class="card pdf-block"><h2>Balance – classe 7</h2>${balHTML("crpcen",oi,o)}
+            <div class="theo">Cotisations dues (4 %) : <b data-crpdu="${oi}"></b></div></div>
+        </div>
+        <div class="card pdf-block"><div class="loan-grid" style="grid-template-columns:1fr 1fr">
+          <div class="field"><label>Solde du compte 645520</label><div class="suffix"><input data-crpf="${oi}|s645520" value="${esc(o.s645520)}" inputmode="decimal" placeholder="Facultatif"><span>€</span></div></div>
+          <div class="field"><label>Solde du compte 435200</label><div class="suffix"><input data-crpf="${oi}|s435200" value="${esc(o.s435200)}" inputmode="decimal" placeholder="Facultatif"><span>€</span></div></div></div></div>
+        <div class="card pdf-block"><h2>Contrôles${multi?` – office n°${oi+1}`:""}</h2><div data-crpctrl="${oi}"></div><p class="hint" style="margin:8px 0 0">Tolérance d'arrondi : 1 €.</p></div>
+        <div class="card pdf-block"><h2>Commentaire</h2><textarea class="crp-com" data-crpf="${oi}|com" placeholder="Explication des écarts, régularisations…">${esc(o.com)}</textarea></div>
+      </div>`).join("")}`;
+  },
+  after(){ crpRefresh(); },
+  lines: ()=>[]
+};
+function crpRefresh(){
+  if(!$("[data-view=crpcen]")) return;
+  actOff(crpState()).forEach((o,oi)=>{
+    const t = crpTotals(o);
+    crpQuarters().forEach(q=>{ const c=$(`[data-crpcot="${oi}|${q}"]`); const v=num((o.decl||{})[q]); if(c) c.textContent = v===null?"—":eur(r2(v*0.04)); });
+    const set=(sel,v)=>{ const e=$(sel); if(e) e.textContent=v; };
+    set(`[data-crptb="${oi}"]`, eur(t.b)); set(`[data-crptc="${oi}"]`, eur(t.cot));
+    set(`[data-baltot="crpcen|${oi}"]`, eur(t.bal)); set(`[data-crpdu="${oi}"]`, eur(t.du));
+    const c=$(`[data-crpctrl="${oi}"]`); if(c) c.innerHTML = crpCtrlHTML(oi);
+  });
+}
+
+/* Événements communs TVA / CRPCEN */
+function balFind(key){ const [modId,oi,lid]=key.split("|"); const st = modId==="tva"?tvaState():crpState(); const off=st.offices[+oi]; return { modId, off, line: lid ? off.lines.find(l=>l.id===lid) : null }; }
+const balRefresh = modId=> modId==="tva" ? tvaRefresh() : crpRefresh();
+["input","change"].forEach(ev=>document.addEventListener(ev, e=>{
+  const d = e.target.dataset||{};
+  if(d.bal){ const [mid,oi,lid,f]=d.bal.split("|"); const {line}=balFind(`${mid}|${oi}|${lid}`); line[f]=e.target.value; save(); balRefresh(mid); }
+  else if(d.tva){ const [k,f]=d.tva.split("|"); const m=tvaState(); (m.decl[k] = m.decl[k]||{})[f]=e.target.value; save(); tvaRefresh(); }
+  else if(d.tva4457!==undefined){ tvaState().s4457=e.target.value; save(); tvaRefresh(); }
+  else if(d.offname){ const [mid,oi]=d.offname.split("|"); tvaState().offices[+oi].nom=e.target.value; save(); }
+  else if(d.crpq){ const [oi,q]=d.crpq.split("|"); const o=crpState().offices[+oi]; (o.decl=o.decl||{})[q]=e.target.value; save(); crpRefresh(); }
+  else if(d.crpf){ const [oi,f]=d.crpf.split("|"); crpState().offices[+oi][f]=e.target.value; save(); if(f!=="com"&&f!=="nom"&&f!=="num") crpRefresh(); }
+}));
+document.addEventListener("click", e=>{
+  const sg=e.target.closest("[data-bal-sign]");
+  if(sg){ const {modId,line}=balFind(sg.dataset.balSign); line.sg = line.sg==="-"?"+":"-"; sg.textContent = line.sg==="-"?"−":"+"; sg.classList.toggle("neg", line.sg==="-"); save(); balRefresh(modId); }
+  const add=e.target.closest("[data-bal-add]");
+  if(add){ const [mid,oi]=add.dataset.balAdd.split("|"); const {off}=balFind(`${mid}|${oi}|`); off.lines.push({ id:uid(), lib:"", sg:"+", amt:"", fixed:false }); save(); render(); }
+  const del=e.target.closest("[data-bal-del]");
+  if(del){ const [mid,oi,lid]=del.dataset.balDel.split("|"); const {off}=balFind(`${mid}|${oi}|`); off.lines = off.lines.filter(l=>l.id!==lid); save(); render(); }
+});
+
 /* Modules en test : actifs uniquement sur le domaine de recette webflow.io */
-const BETA = ["particip"];
+const BETA = ["particip","tva","crpcen"];
 if(!/webflow\.io$|^localhost$|^$/.test(location.hostname)) BETA.forEach(k=>delete MODULES[k]);
 
 function icneRefresh(loanEl){

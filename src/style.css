@@ -245,6 +245,28 @@ h2{font-size:16px;margin:0;font-weight:700}
 #pdf-stage .prow .suffix .pdf-val{padding-right:20px;text-align:right}
 @media (max-width:900px){.prow{grid-template-columns:1fr 1fr}.prow.fhead{display:none}}
 
+/* Contrôles TVA / CRPCEN */
+.tbl input{width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:#fff;min-width:0}
+.tbl .suffix input{padding-right:24px;text-align:right}
+.tbl input:focus{outline:2px solid var(--violet-100);border-color:var(--violet)}
+.tbl.decl td{padding:4px 8px}.tbl.decl td:first-child{font-weight:600}
+.bal-grid{display:grid;grid-template-columns:1fr;gap:0 16px}.bal-grid.multi{grid-template-columns:1fr 1fr}
+.tbl.bal td{padding:4px 8px}
+.sg{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--vert-50);color:var(--vert-d);font-weight:800;cursor:pointer;font-size:15px}
+.sg.neg{background:#FDECEC;color:#B42318}
+.theo{margin-top:12px;padding:10px 12px;background:var(--violet-50);border-radius:10px;font-size:13px}.theo b{color:var(--violet)}
+.off-name{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-top:10px;font-weight:600}
+.off-title{margin:22px 0 10px;font-size:18px}
+.st{display:inline-block;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:99px;white-space:nowrap}
+.st.ok{background:var(--vert-50);color:var(--vert-d)}.st.ko{background:#FDECEC;color:#B42318}
+.tbl.ctrl td{vertical-align:top}.tbl.ctrl .hint{margin:0;font-size:10.5px}.neg-t{color:#B42318;font-weight:700}
+.crp-com{width:100%;min-height:80px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px;resize:vertical}
+#pdf-stage .tbl .pdf-val{display:block;border:0;padding:2px;text-align:right}
+#pdf-stage .tbl .suffix .pdf-val{padding-right:20px}
+#pdf-stage .tbl.bal td:first-child .pdf-val{text-align:left}
+#pdf-stage .off-name{border:0;padding:0}
+@media (max-width:900px){.bal-grid.multi{grid-template-columns:1fr}}
+
 /* Compatibilité Webflow (styles globaux du site) */
 html,body{height:auto}
 .task label,.donebox{font-weight:inherit;margin-bottom:0}
