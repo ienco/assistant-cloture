@@ -10,7 +10,7 @@ const CYCLES = [
   { id:"tresorerie", label:"Trésorerie", tasks:[
     { id:"rappro",   label:"Rapprochements bancaires" },
     { id:"recip181", label:"Réciprocité des comptes 181000", when:c=>c.multiOffice, condLabel:"Multi-office" },
-    { id:"cdc",      label:"Produits financiers CDC du 4e trimestre à recevoir" },
+    { id:"cdc",      label:"Produits financiers à recevoir" },
     { id:"icne",     label:"Intérêts courus non échus", tab:true }
   ]},
   { id:"fournisseurs", label:"Fournisseurs & frais généraux", tasks:[
@@ -19,7 +19,7 @@ const CYCLES = [
     { id:"ab488",    label:"Annulation des comptes d'abonnement de charges (488)" }
   ]},
   { id:"produits", label:"Produits d'exploitation", tasks:[
-    { id:"particip",  label:"Participations à recevoir" },
+    { id:"particip",  label:"Participations à recevoir", tab:true },
     { id:"autresprod",label:"Autres produits à recevoir (subventions)" }
   ]},
   { id:"immobilisations", label:"Immobilisations", tasks:[
@@ -697,8 +697,101 @@ document.addEventListener("click", e=>{
   }
 });
 
+
+/* =========================================================
+   MODULE : PARTICIPATIONS À RECEVOIR
+   ========================================================= */
+const PART_CRPCEN = 4, PART_TVA = 20;
+const newPart = ()=>({ id:uid(), date:"", lib:"", ht:"" });
+function partCalc(P){
+  const r = { ok:false, err:null };
+  const ht = num(P.ht);
+  if(P.ht!=="" && (ht===null || ht<0)){ r.err="Montant HT invalide."; return r; }
+  if(P.date && P.date > state.params.date){ r.err=`Acte postérieur à la clôture (${fr(state.params.date)}) : la participation ne peut pas être comptabilisée à recevoir.`; return r; }
+  if(!P.date || ht===null || !ht) return r;
+  r.ok = true; r.ht = r2(ht); r.crpcen = r2(ht*PART_CRPCEN/100); r.tva = r2(ht*PART_TVA/100); r.net = r2(r.ht + r.tva - r.crpcen);
+  return r;
+}
+function partRowHTML(P){
+  return `<div class="prow pdf-block" data-part-row="${P.id}">
+    <input type="date" data-part="date" value="${P.date}" max="${state.params.date}">
+    <input data-part="lib" value="${esc(P.lib)}" placeholder="Affaire, client, nature de l'acte">
+    <div class="suffix"><input data-part="ht" value="${esc(P.ht)}" inputmode="decimal" placeholder="0,00"><span>€</span></div>
+    <div class="r p-c" data-part-crpcen></div>
+    <div class="r p-c" data-part-tva></div>
+    <div class="r p-n" data-part-net></div>
+    <button class="btn ghost no-print" data-part-del="${P.id}" title="Supprimer la ligne" aria-label="Supprimer">✕</button>
+    <div class="f-msg" data-part-msg></div>
+  </div>`;
+}
+function partFillRow(el){
+  const P = state.mods.particip.lines.find(x=>x.id===el.dataset.partRow); const r = partCalc(P);
+  $("[data-part-crpcen]",el).textContent = r.ok ? eur(r.crpcen) : "—";
+  $("[data-part-tva]",el).textContent = r.ok ? eur(r.tva) : "—";
+  $("[data-part-net]",el).textContent = r.ok ? eur(r.net) : "—";
+  $("[data-part-msg]",el).innerHTML = r.err ? `<div class="msg err">⚠ ${esc(r.err)}</div>` : "";
+}
+function partTotals(){
+  const m = mod("particip", ()=>({lines:[newPart()]}));
+  const rows = m.lines.map(P=>({P,r:partCalc(P)})), ok = rows.filter(x=>x.r.ok);
+  const sum = k=>r2(ok.reduce((s,x)=>s+x.r[k],0));
+  return { m, rows, ht:sum("ht"), crpcen:sum("crpcen"), tva:sum("tva"), net:sum("net") };
+}
+function partLines(){
+  const t = partTotals(); if(!t.ht) return [];
+  const lbl = `Participations à recevoir au ${fr(state.params.date)}`;
+  return [
+    {compte:"468700", lib:`${lbl} – montant net à recevoir`, d:t.net},
+    {compte:"645581", lib:`${lbl} – CRPCEN sur émoluments (${PART_CRPCEN} %)`, d:t.crpcen},
+    {compte:"706801", lib:`${lbl} – participations HT`, c:t.ht},
+    {compte:"445870", lib:`${lbl} – TVA sur factures à établir (${PART_TVA} %)`, c:t.tva}
+  ];
+}
+function partSummaryHTML(){
+  const t = partTotals();
+  const errs = t.rows.filter(x=>x.r.err).length, inc = t.rows.filter(x=>!x.r.ok && !x.r.err && (x.P.date||x.P.lib||x.P.ht)).length;
+  let h = `<div class="card pdf-block"><h2>Totaux</h2>
+    <div class="kpis" style="grid-template-columns:repeat(4,1fr)"><div><span>Participations HT</span><b>${eur(t.ht)}</b></div><div><span>CRPCEN ${PART_CRPCEN} %</span><b>${eur(t.crpcen)}</b></div><div><span>TVA ${PART_TVA} %</span><b>${eur(t.tva)}</b></div><div><span>Net à recevoir</span><b>${eur(t.net)}</b></div></div>
+    ${errs||inc?`<div class="msg warn">${errs?`${errs} ligne(s) en erreur`:""}${errs&&inc?" · ":""}${inc?`${inc} ligne(s) incomplète(s)`:""} : non incluse(s) dans l'écriture.</div>`:""}
+  </div>`;
+  const L = partLines();
+  return h + (L.length ? entryHTML(L, `Participations à recevoir au ${fr(state.params.date)}`)
+    : `<div class="card entry pdf-block"><h2>Écriture à comptabiliser</h2><p class="hint" style="margin:8px 0 0">L'écriture s'affichera dès qu'une ligne sera complète (date de l'acte et montant HT).</p></div>`);
+}
+MODULES.particip = {
+  html(){
+    const m = mod("particip", ()=>({lines:[newPart()]}));
+    return `<div class="card intro no-print"><p>Une ligne par acte signé avant la clôture dont la participation n'est pas encore encaissée. Le calculateur applique la CRPCEN sur émoluments (${PART_CRPCEN} % du HT) et la TVA (${PART_TVA} % du HT) ; le net à recevoir est porté au compte 468700.</p></div>
+      <div class="card fnp-card">
+        <div class="prow fhead"><span>Date de l'acte</span><span>Désignation de l'affaire</span><span class="r">Montant HT</span><span class="r">CRPCEN</span><span class="r">TVA</span><span class="r">Net</span><span></span></div>
+        <div id="part-lines">${m.lines.map(partRowHTML).join("")}</div>
+        <button class="btn add no-print" data-part-add style="margin:12px 0 0">+ Ajouter une ligne</button>
+      </div>
+      <div id="part-sum">${partSummaryHTML()}</div>`;
+  },
+  after(root){ $$("[data-part-row]", root).forEach(partFillRow); },
+  lines: ()=>partLines()
+};
+function partRefresh(el){ if(el) partFillRow(el); else MODULES.particip.after(document); const s=$("#part-sum"); if(s) s.innerHTML=partSummaryHTML(); }
+["input","change"].forEach(ev=>document.addEventListener(ev, e=>{
+  const k = e.target.dataset && e.target.dataset.part; if(!k) return;
+  const el = e.target.closest("[data-part-row]"); const P = state.mods.particip.lines.find(x=>x.id===el.dataset.partRow);
+  P[k] = e.target.value; save(); partRefresh(el);
+}));
+document.addEventListener("click", e=>{
+  if(e.target.closest("[data-part-add]")){
+    const m = state.mods.particip; const np = newPart(); m.lines.push(np); save();
+    const box=$("#part-lines"); box.insertAdjacentHTML("beforeend", partRowHTML(np)); partRefresh(box.lastElementChild); $("input", box.lastElementChild).focus();
+  }
+  const del = e.target.closest("[data-part-del]");
+  if(del){
+    const m = state.mods.particip; m.lines = m.lines.filter(x=>x.id!==del.dataset.partDel); if(!m.lines.length) m.lines.push(newPart());
+    save(); $("#part-lines").innerHTML = m.lines.map(partRowHTML).join(""); partRefresh();
+  }
+});
+
 /* Modules en test : actifs uniquement sur le domaine de recette webflow.io */
-const BETA = [];
+const BETA = ["particip"];
 if(!/webflow\.io$|^localhost$|^$/.test(location.hostname)) BETA.forEach(k=>delete MODULES[k]);
 
 function icneRefresh(loanEl){
